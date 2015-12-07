@@ -15,10 +15,15 @@ class IndexController extends Controller
 {
     public function index()
     {
-        // 从数据库取得POST参数对应的用户信息
+        // 从数据库表user中取得$_POST['id']参数对应的用户信息
         $user = Model::db('user')->select(Param::post('id'));
+        
+        // 从数据库表user中取得年龄>18的用户总数，并且按照年龄倒序排列，返回第11-20条数据。
+        list($user_list, $user_count) = Model::db('user')->select(array('age >'=>18), array('_order'=>'age DESC', '_limit'=>'11,10', '_count'=>'id'));
 
         $this->assign('user', $user);
+        $this->assign('user_list', $user_list);
+        $this->assign('user_count', $user_count);
         $this->display();
     }
 }
