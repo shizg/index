@@ -19,7 +19,8 @@ class IndexController extends Controller
         $user = Model::db('user')->select(Param::post('id'));
         
         // 从数据库表user中取得年龄>18的用户总数，并且按照年龄倒序排列，返回第11-20条数据。
-        list($user_list, $user_count) = Model::db('user')->select(array('age >'=>18), array('_order'=>'age DESC', '_limit'=>'11,10', '_count'=>'id'));
+        list($user_list, $user_count) = Model::db('user')->select(array('age >'=>18), 
+                                                                  array('_order'=>'age DESC', '_limit'=>'11,10', '_count'=>'id'));
 
         $this->assign('user', $user);
         $this->assign('user_list', $user_list);
