@@ -7,7 +7,22 @@ IndexPHP是一个单入口、单文件PHP框架。遵循MVC（模型一视图一
 
 使用方法也极其简单，只需下载框架文件index.php到项目根目录，然后通过浏览器输入项目访问地址，即可自动生成框架目录结构（项目目录需要有写入权限）。
 
-[示例网站](http://index-php.top)
+[文档手册](http://index-php.top)
+
+## 示例代码
+```php
+class IndexController extends Controller
+{
+    public function index()
+    {
+        // 从数据库取得POST参数对应的用户信息
+        $user = Model::db('user')->select(Param::post('id'));
+
+        $this->assign('user', $user);
+        $this->display();
+    }
+}
+```
 
 ## 基本功能
 1. PATHINFO模式路由
