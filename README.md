@@ -18,9 +18,11 @@ class IndexController extends Controller
         // 从数据库表user中取得$_POST['id']参数对应的用户信息
         $user = Model::db('user')->select(Param::post('id'));
         
-        // 从数据库表user中取得年龄>18的用户总数，并且按照年龄倒序排列，返回第11-20条数据。
+        // 从数据库表user中取得年龄>18的用户总数，并且按照年龄倒序排列，返回从第11条开始的10条数据。
         list($user_list, $user_count) = Model::db('user')->select(array('age >'=>18), 
-                                                                  array('_order'=>'age DESC', '_limit'=>'11,10', '_count'=>'id'));
+                                                                  array('_order'=>'age DESC',  // 年龄倒序
+                                                                        '_limit'=>'11,10',     // 分页输出
+                                                                        '_count'=>'id'));      // COUNT(id)
 
         $this->assign('user', $user);
         $this->assign('user_list', $user_list);
@@ -40,6 +42,29 @@ class IndexController extends Controller
 7. 缓存功能
 
 ## 目录结构
+
+ * 只需引入框架文件index.php，框架会自动生成如下目录结构
+```php
+
+│  index.php                     # 框架、入口文件
+└─app
+    │  common.php                # 公共函数库 （可选，自动导入）
+    │  conf.php                  # 配置文件
+    ├─cache                      # 文件缓存（可选）
+    ├─ctrl                       # 控制器目录
+    │      index.class.php       # 控制器文件
+    ├─lib                        # 外部库目录 （可选，自动导入）
+    │      Test.class.php        # 外部库文件
+    ├─log                        # 日志目录
+    │      20151208.log          # 日志文件
+    └─view                       # 模板视图根目录
+        ├─index                  # 控制器模板目录（对应index控制器）
+        │      index.html        # 模板文件
+        └─_layout                # 布局目录（可选）
+                main.html        # 布局文件
+                
+
+```
 
 ## 命名规范
 
