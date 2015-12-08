@@ -79,17 +79,18 @@ class IndexController extends Controller
 ## 系统常量
 
 ```php
-PATH_APP		系统路径
-PATH_APP_CTRL   控制器路径
-PATH_APP_VIEW   视图路径
-PATH_APP_LIB    外部库路径
-PATH_APP_LOG    日志路径
+名称                    默认值            说明
+PATH_APP		        ./app/           系统路径
+PATH_APP_CTRL           ./app/ctrl       控制器路径
+PATH_APP_VIEW           ./app/view       视图模板路径
+PATH_APP_LIB            ./app/lib        外部库路径
+PATH_APP_LOG            ./app/log        日志路径
 
-FILE_APP_CONF   配置文件路径
-FILE_APP_COMM   公共函数文件路径
+FILE_APP_CONF           ./app/conf.php   配置文件路径
+FILE_APP_COMM           ./app/common.php 公共函数文件路径
 
-CTRL_NAME		控制器名（驼峰式命名）
-ACTION_NAME		控制器方法名（驼峰式命名）
+CTRL_NAME		        index            控制器名    （驼峰式命名）
+ACTION_NAME		        index            控制器方法名（驼峰式命名）
 ```
 
 ## 配置选项
