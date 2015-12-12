@@ -54,7 +54,7 @@ class IndexController extends Controller
     ├─ctrl                       # 控制器目录
     │      index.class.php       # 控制器文件
     ├─lib                        # 外部库目录 （可选，自动导入）
-    │      Test.class.php        # 外部库文件
+    │      test.class.php        # 外部库文件
     ├─log                        # 日志目录
     │      20151208.log          # 日志文件
     └─view                       # 模板视图根目录
@@ -81,10 +81,10 @@ class IndexController extends Controller
 ```php
 名称                    默认值            说明
 PATH_APP		        ./app/           系统路径
-PATH_APP_CTRL           ./app/ctrl       控制器路径
-PATH_APP_VIEW           ./app/view       视图模板路径
-PATH_APP_LIB            ./app/lib        外部库路径
-PATH_APP_LOG            ./app/log        日志路径
+PATH_APP_CTRL           ./app/ctrl/      控制器路径
+PATH_APP_VIEW           ./app/view/      视图模板路径
+PATH_APP_LIB            ./app/lib/       外部库路径
+PATH_APP_LOG            ./app/log/       日志路径
 
 FILE_APP_CONF           ./app/conf.php   配置文件路径
 FILE_APP_COMM           ./app/common.php 公共函数文件路径
