@@ -1,6 +1,5 @@
 <?php
-
-@error_reporting(E_ALL);
+@error_reporting(0);
 
 // 单文件入口
 IndexPHP::run();
@@ -23,6 +22,7 @@ class IndexPHP
         set_exception_handler('IndexPHP::_exception');
         register_shutdown_function('IndexPHP::_shutdown');
 
+        // 定义常量
         defined('PATH_APP') or define('PATH_APP', './app/');
 
         defined('PATH_APP_CTRL') or define('PATH_APP_CTRL', PATH_APP . 'ctrl/');
@@ -33,39 +33,50 @@ class IndexPHP
         defined('FILE_APP_CONF') or define('FILE_APP_CONF', PATH_APP . '/conf.php');
         defined('FILE_APP_COMM') or define('FILE_APP_COMM', PATH_APP . '/common.php');
 
+        define('IS_POST', Param::server('REQUEST_METHOD') =='POST' ? true : false);
+
         // 初始化框架
         self::_init();
 
+        // 导入配置
         Config::set(self::import(FILE_APP_CONF));
         Config::get('ENABLE_SESSION') && session_start();
 
+        // 路由处理
         $ca = explode('/', trim(Param::server('PATH_INFO', Config::get('DEFAULT_CTRL_ACTION')), '/'));
-        define('CTRL_NAME', strtolower(Param::get(Config::get('PARAM_CTRL', 'c'), !empty($ca[0])?$ca[0]:'index')));
-        define('ACTION_NAME', strtolower(Param::get(Config::get('PARAM_ACTION', 'a'), !empty($ca[1])?$ca[1]:'index')));
+        define('CTRL_NAME', strtolower(Param::get(Config::get('PARAM_CTRL', 'c'), !empty($ca[0]) ? $ca[0] : 'index')));
+        define('ACTION_NAME', strtolower(Param::get(Config::get('PARAM_ACTION', 'a'), !empty($ca[1]) ? $ca[1] : 'index')));
 
-        // 导入控制器文件，判断是否存在
+        // 导入控制器文件
         if (!self::import(PATH_APP_CTRL . CTRL_NAME . Config::get('FILE_EXTENSION_CTRL', '.class.php'))) {
             throw new Exception('没有控制器:' . CTRL_NAME);
         }
 
+        // 控制器、方法名称变换处理
         $c = self::camelize(CTRL_NAME) . Config::get('POSTFIX_CTRL', 'Controller');
         $a = lcfirst(self::camelize(ACTION_NAME)) . Config::get('POSTFIX_ACTION', '');
 
-        // 是否存在控制器类
+        // 控制器类判断是否存在
         if (class_exists($c)) {
+            // 导入公共函数库
             self::import(FILE_APP_COMM);
+            // 自动加载外部库
             spl_autoload_register('self::_autoload');
 
+            // 调用控制器方法
             call_user_func(array(new $c(), $a));
         }
     }
 
+
     /**
+     * 导入文件
      * @param $file
      * @return bool|mixed
      */
     public static function import($file)
     {
+        // 判断文件是否存在，存在则导入
         if (file_exists($file)) {
             return include $file;
         }
@@ -73,15 +84,23 @@ class IndexPHP
         return false;
     }
 
+
+    /**
+     * 驼峰命名转下划线命名
+     * @param $word
+     * @return mixed
+     */
     public static function decamelize($word)
     {
-        return preg_replace(
-            '/(^|[a-z])([A-Z])/e',
-            'strtolower(strlen("\\1") ? "\\1_\\2" : "\\2")',
-            $word
-        );
+        return preg_replace('/(^|[a-z])([A-Z])/e', 'strtolower(strlen("\\1") ? "\\1_\\2" : "\\2")', $word);
     }
 
+
+    /**
+     * 下划线命名转驼峰命名
+     * @param $word
+     * @return mixed
+     */
     public static function camelize($word)
     {
         return preg_replace('/(^|_)([a-z])/e', 'strtoupper("\\2")', $word);
@@ -100,16 +119,17 @@ class IndexPHP
             mkdir(PATH_APP_LOG, 0755);
             // file_put_contents(FILE_APP_CONF, "<?php\nreturn array(\n\t//'配置项'=>'配置值'\n);");
             file_put_contents(PATH_APP_CTRL . "index.class.php", "<?php\nclass IndexController extends Controller {\n\n    public function index(){\n        \$this->show('hi index-php~');\n    }\n}");
+            file_put_contents(".htaccess", "<IfModule mod_rewrite.c>\n   RewriteEngine on\n   RewriteCond %{REQUEST_FILENAME} !-d\n   RewriteCond %{REQUEST_FILENAME} !-f\n   RewriteRule ^(.*)$ index.php/$1 [QSA,PT]\n</IfModule>");
 
-            // 压缩
-            file_put_contents('index.min.php', php_strip_whitespace('index.php'));
+            // 压缩源文件
+            ($min = php_strip_whitespace(__FILE__)) && (strlen($min) < filesize(__FILE__)) && (file_put_contents('index.min.php', $min));
         }
         return true;
     }
 
 
     /**
-     * 自动加载函数
+     * 自动导入外部库
      * @param string $clazz 类名
      * @return bool
      */
@@ -127,6 +147,10 @@ class IndexPHP
         Logger::error("_error : [$errno] $errmsg File: $errfile Line: $errline");
     }
 
+    /**
+     * 异常处理
+     * @param $ex
+     */
     public static function _exception($ex)
     {
         $errno      = $ex->getCode();
@@ -138,10 +162,14 @@ class IndexPHP
         Logger::error("_exception : [$errno] $errmsg File: $errfile Line: $errline \n $errstr");
     }
 
+
+    /**
+     * 关闭处理
+     */
     public static function _shutdown()
     {
-        if($e = error_get_last())
-        {
+        // 判断是否存在错误，存在则写入Log
+        if ($e = error_get_last()) {
             Logger::error("_shutdown : [{$e['type']}] {$e['message']} File: {$e['file']} Line: {$e['line']}");
         }
         Logger::save();
@@ -160,10 +188,15 @@ class Controller
     private $_p = array();
 
     /**
+     * 主题
+     * @var
+     */
+    protected $_theme;
+
+    /**
      * Controller constructor.
      */
-    public function __construct()
-    {
+    public function __construct() {
         $this->_init();
     }
 
@@ -175,92 +208,92 @@ class Controller
      * @param array $args 参数
      * @return mixed
      */
-    public function __call($method, $args)
-    {
+    public function __call($method, $args) {
+        // 存在_empty 空方法时则执行_empty方法
         if (method_exists($this, '_empty')) {
             // 如果定义了_empty操作 则调用
             return $this->_empty($method, $args);
         }
 
+        // 直接渲染模板
         $this->display();
     }
 
 
     /**
-     *
+     * 初始化处理
      */
-    protected function _init()
-    {
+    protected function _init() {
     }
 
     /**
+     * 模板赋值
      * @param $name
      * @param $value
      */
-    protected function assign($name, $value)
-    {
+    protected function assign($name, $value) {
         $this->_p[$name] = $value;
     }
 
 
     /**
+     * 显示内容
      * @param $text
      * @param null $params
      */
-    protected function show($text, $params = null)
-    {
+    protected function show($text, $params = null) {
         $params = $params ? array_merge($this->_p, $params) : $this->_p;
-        View::render($text, $params);
+        View::render($text, $params, null);
     }
 
 
     /**
+     * 显示模板
      * @param null $tpl
      * @param null $params
      * @param null $layout
      */
-    protected function display($tpl = null, $params = null, $layout = null)
-    {
-        is_array($tpl) && list($params, $tpl) = array($tpl, null);
+    protected function display($tpl = null, $params = null, $layout = null) {
+        is_array($tpl) && list($tpl, $params, $layout) = array(null, $tpl, $params);
         $tpl || $tpl = CTRL_NAME . '/' . ACTION_NAME;
-        // 主题
+        $this->_theme && $tpl = $this->_theme . '/' . $tpl; // 主题
 
         $params = $params ? array_merge($this->_p, $params) : $this->_p;
 
-        if($layout)
-        {
+        // 如果存在布局参数，则将模板数据写到content参数中，然后通过布局输出
+        if ($layout) {
             $params['content'] = View::fetch($tpl, $params, PATH_APP_VIEW);
-            $tpl = $layout;
+            $tpl = $this->_theme ? $this->_theme . '/' . $layout : $layout; // 主题
         }
 
-        View::render($tpl, $params, PATH_APP_VIEW);
+        View::render($tpl, $params);
     }
 
     /**
+     * 正常输出
      * @param $msg
      * @param null $data
      */
-    protected function ok($msg, $data = null)
-    {
-        is_array($msg) && list($data, $msg) = array($msg, '');
+    protected function ok($msg, $data = null) {
+        is_array($msg) && list($msg, $data) = array(null, $msg);
         $this->json(1, $msg, $data);
     }
 
     /**
+     * 错误输出
      * @param $msg
      */
-    protected function error($msg)
-    {
+    protected function error($msg) {
         $this->json(0, $msg);
     }
 
     /**
+     * 返回json
      * @param $status
      * @param $msg
      * @param null $data
      */
-    protected function json($status, $msg, $data = null)
-    {
+    protected function json($status, $msg, $data = null) {
         View::render(json_encode(array('status' => $status, 'msg' => $msg, 'data' => $data)), null, null, 'application/json');
         exit;
     }
@@ -271,10 +304,8 @@ class Controller
      * @param string $url 要跳转的url
      * @param void
      */
-    protected function redirect($url)
-    {
-        header("Location: $url");
-        exit;
+    protected function redirect($url) {
+        header("Location: $url");exit;
     }
 }
 
@@ -286,13 +317,13 @@ class View
 {
 
     /**
+     * 渲染模板或者数据，通过参数返回
      * @param $file
      * @param null $data
      * @param null $path
      * @return string
      */
-    public static function fetch($file, $data = null, $path = null)
-    {
+    public static function fetch($file, $data = null, $path = null) {
         // 页面缓存
         ob_start();
         ob_implicit_flush(0);
@@ -311,16 +342,16 @@ class View
 
 
     /**
+     * 显示模板或数据内容
      * @param $file
      * @param null $data
-     * @param null $path
+     * @param string $path
      * @param string $contentType
      */
-    public static function render($file, $data = null, $path = null, $contentType = 'text/html')
-    {
+    public static function render($file, $data = null, $path = PATH_APP_VIEW, $contentType = 'text/html') {
         $html = self::fetch($file, $data, $path);
 
-        header('Content-Type:'.$contentType.'; charset='.Config::get('HTML_CHARSET', 'utf-8'));
+        header('Content-Type:' . $contentType . '; charset=' . Config::get('HTML_CHARSET', 'utf-8'));
         header('X-Powered-By:index-php.top');
         echo $html;
     }
@@ -331,8 +362,7 @@ class View
  * 数据模型
  * Class Model
  */
-class Model
-{
+class Model {
 
     /**
      * 数据
@@ -354,11 +384,11 @@ class Model
 
     /**
      * 构造函数
-     * Model constructor.
+     * Model constructor
+     * @param $table
      * @param $storage
      */
-    private function __construct($table, $storage)
-    {
+    private function __construct($table, $storage) {
         $this->_t = $table;
         $this->_s = $storage;
     }
@@ -370,11 +400,17 @@ class Model
      * @param $args
      * @return mixed
      */
-    public function __call($name, $args)
-    {
-        $this->_model && $args[0] = $args[0] ? array_merge($this->_model, $args[0]) : $this->_model;
+    public function __call($name, $args) {
+        // 第一个参数与Model数据合并
+        $this->_model && $args[0] = ($args[0] ? array_merge($this->_model, $args[0]) : $this->_model);
+
+        // 存在数据表参数时将数据表参数作为第一个参数值
         $this->_t && array_unshift($args, $this->_t);
+
+        // 调用数据库/文件方法
         $data = call_user_func_array(array($this->_s, $name), $args);
+
+        // 如果返回数据为数组，则保存到Model属性_model中
         is_array($data) && $this->_model = $data;
 
         return $data;
@@ -382,25 +418,23 @@ class Model
 
 
     /**
-     * 实例化对象
+     * 通过数据库对象实例化Model
      * @param null $table
      * @param bool $db_debug
      * @return Model
      */
-    public static function db($table = null, $db_debug = false)
-    {
+    public static function db($table = null, $db_debug = false) {
         (!isset($db_debug) || is_bool($db_debug)) && $db_debug = DB::instance(null, $db_debug);
         return new self($table, $db_debug);
     }
 
 
     /**
-     * 实例化对象
+     * 通过文件操作对象实例化Model
      * @param $file
      * @return Model
      */
-    public static function file($file)
-    {
+    public static function file($file) {
         return new self($file, File::instance());
     }
 
@@ -411,8 +445,7 @@ class Model
      * @param mixed $value 值
      * @return void
      */
-    public function __set($name, $value)
-    {
+    public function __set($name, $value) {
         // 设置数据对象属性
         $this->_model[$name] = $value;
     }
@@ -423,8 +456,7 @@ class Model
      * @param string $name 名称
      * @return mixed
      */
-    public function __get($name)
-    {
+    public function __get($name) {
         return $this->_model[$name];
     }
 
@@ -434,8 +466,7 @@ class Model
      * @param string $name 名称
      * @return boolean
      */
-    public function __isset($name)
-    {
+    public function __isset($name) {
         return isset($this->_model[$name]);
     }
 
@@ -445,8 +476,7 @@ class Model
      * @param string $name 名称
      * @return void
      */
-    public function __unset($name)
-    {
+    public function __unset($name) {
         unset($this->_model[$name]);
     }
 }
@@ -456,14 +486,12 @@ class Model
  * 配置处理
  * Class Config
  */
-class Config
-{
+class Config {
     /**
      * 配置缓存
      * @var array
      */
     private static $_c = array();
-
 
     /**
      * 取得配置
@@ -471,12 +499,13 @@ class Config
      * @param null $default
      * @return array|null
      */
-    public static function get($key = null, $default = null)
-    {
+    public static function get($key = null, $default = null) {
+        // 返回单个配置
         if (is_string($key)) {
             return isset(self::$_c[$key]) ? self::$_c[$key] : $default;
         }
 
+        // 返回一组配置
         if (is_array($key)) {
             $ret = array();
             foreach ($key as $k) {
@@ -485,6 +514,7 @@ class Config
             return $ret;
         }
 
+        // 返回所有配置
         return self::$_c;
     }
 
@@ -495,12 +525,13 @@ class Config
      * @param null $value
      * @return array
      */
-    public static function set($key, $value = null)
-    {
+    public static function set($key, $value = null) {
+        // 设置单个配置
         if (is_string($key)) {
             self::$_c[$key] = $value;
         }
 
+        // 多个配置设置合并
         if (is_array($key)) {
             self::$_c = array_merge(self::$_c, $key);
         }
@@ -516,6 +547,12 @@ class Config
  */
 class Param
 {
+    public static function url($action = ACTION_NAME, $ctrl = CTRL_NAME, $params = null)
+    {
+        is_array($params) && $params = http_build_query($params);
+        return "/{$ctrl}/{$action}?{$params}";
+    }
+
     /**
      * 取得$_GET键对应的值，键值为空返回所有
      * @param null $key
@@ -595,9 +632,12 @@ class Param
      */
     private static function _param($data, $key = null, $default = null)
     {
+        // 如果Key值为空，返回参数数组
         if (!isset($key)) {
             return $data;
         }
+
+        // 返回Key对应的参数值，空则返回默认值
         return isset($data[$key]) ? $data[$key] : $default;
     }
 }
@@ -609,13 +649,15 @@ class Param
  */
 class Logger
 {
-    const INFO = 1;
-    const DEBUG = 2;
-    const WARNING = 3;
-    const ERROR = 4;
+    const INFO = 1;     // 日志类型 信息
+    const DEBUG = 2;    // 日志类型 调试
+    const WARNING = 3;  // 日志类型 警告
+    const ERROR = 4;    // 日志类型 错误
 
+    // 类型对应文字
     private static $LEVEL = array(self::INFO => 'INFO', self::DEBUG => 'DEBUG', self::WARNING => 'WARNING', self::ERROR => 'ERROR');
 
+    // 日志列表
     private static $_log = array();
 
     /**
@@ -623,9 +665,9 @@ class Logger
      */
     public static function save()
     {
-        if(count(self::$_log) > 0)
-        {
-            file_put_contents(dirname(__FILE__) . DIRECTORY_SEPARATOR . PATH_APP_LOG . date('Ymd') . '.log', implode(PHP_EOL, self::$_log).PHP_EOL, FILE_APPEND);
+        if (count(self::$_log) > 0) {
+            file_put_contents(dirname(__FILE__) . DIRECTORY_SEPARATOR . PATH_APP_LOG . date('Ymd') . '.log', implode(PHP_EOL, self::$_log) . PHP_EOL, FILE_APPEND);
+            self::$_log = array();
         }
     }
 
@@ -685,6 +727,31 @@ class Logger
  */
 class DB
 {
+    private static $OP = array('=', '!=', '<>', '>', '>=', '<', '<=');
+
+    /**
+     * 是否输出调试日志
+     * @var
+     */
+    private $_debug;
+
+    /**
+     * 表前缀
+     * @var
+     */
+    private $_pre;
+
+    /**
+     * @var PDO
+     */
+    private $_pdo;
+
+
+    /**
+     * @param null $config
+     * @param bool|false $debug
+     * @return mixed
+     */
     public static function instance($config = null, $debug = false)
     {
         $config || $config = Config::get();
@@ -696,20 +763,19 @@ class DB
         return $_c[$key];
     }
 
-    private $_debug;
-
-    private $_pre;
 
     /**
-     * @var PDO
+     * DB constructor.
+     * @param $config
+     * @param $debug
      */
-    private $_pdo;
-
-    private function __construct($config, $debug)
+    private function __construct($config, $debug = false)
     {
-        $dsn = "{$config['DB_TYPE']}:host={$config['DB_HOST']};dbname={$config['DB_NAME']};charset={$config['DB_CHARSET']}";
+        isset($config['DB_CHARSET']) || $config['DB_CHARSET'] = 'utf8';
+        $dsn = "{$config['DB_TYPE']}:host={$config['DB_HOST']};port={$config['DB_PORT']};dbname={$config['DB_NAME']};charset={$config['DB_CHARSET']}";
+
         $this->_pdo = new PDO($dsn, $config['DB_USER'], $config['DB_PWD']);
-        $this->_pre = Config::get('DB_PREFIX');
+        $this->_pre = $config['DB_PREFIX'];
         $this->_debug = $debug;
     }
 
@@ -724,7 +790,7 @@ class DB
         $this->_debug && Logger::debug($query);
 
         $query = $this->_pdo->query($query);
-        return $query->fetchAll(PDO::FETCH_ASSOC);
+        return $query ? $query->fetchAll(PDO::FETCH_ASSOC) : false;
     }
 
 
@@ -742,6 +808,24 @@ class DB
 
 
     /**
+     * @param $table
+     * @param null $where
+     * @param null $option
+     * @return bool
+     */
+    public function find($table, $where = null, $option = null)
+    {
+        $limit = array('_limit' => 1);
+        !is_array($option) && $option = array('_column' => $option);
+        $option = array_merge($option, $limit);
+        unset($option['_count']);
+
+        $items = $this->select($table, $where, $option);
+        return $items ? $items[0] : false;
+    }
+
+
+    /**
      * 选择
      * @param $table
      * @param null $where
@@ -750,19 +834,19 @@ class DB
      */
     public function select($table, $where = null, $option = null)
     {
-        !is_array($option) && $option = array('_column'=>$option);
+        ctype_alnum($where) && $where = array('id' => $where);
+        $where = $this->_where($where);
 
-        $column = $option['_column'] ? : '*';
+        !is_array($option) && $option = array('_column' => $option);
+
+        $column = $option['_column'] ?: '*';
+        $group = isset($option['_group']) ? ' GROUP BY ' . $option['_group'] : '';
         $order = isset($option['_order']) ? ' ORDER BY ' . $option['_order'] : '';
         $limit = isset($option['_limit']) ? ' LIMIT ' . $option['_limit'] : '';
 
-        is_int($where) && $where = array('id' => $where);
-        $where = $this->_where($where);
+        $rows = $this->query('SELECT ' . $column . ' FROM ' . $this->_pre . $table . $where . $group . $order . $limit);
 
-        $rows = $this->query('SELECT ' . $column . ' FROM ' . $this->_pre . $table . $where. $order . $limit);
-
-        if(!isset($option['_count']))
-        {
+        if (!isset($option['_count'])) {
             return $rows;
         }
 
@@ -780,13 +864,19 @@ class DB
      */
     public function insert($table, $data)
     {
-        $columns = array_keys($data);
-        $values = array_values($data);
+        isset($data[0]) || $data = array($data);
 
-        $values = array_map(array($this, '_quote'), $values);
-        $this->exec('INSERT INTO ' . $table . ' (' . implode(', ', $columns) . ') VALUES (' . implode($values, ', ') . ')');
+        $ids = array();
+        foreach($data as $item)
+        {
+            $item = $this->_quote($item);
 
-        return $this->_pdo->lastInsertId();
+            $this->exec('INSERT INTO ' . $this->_pre . $table . ' (' . implode(', ', array_keys($item)) . ') VALUES (' . implode(array_values($item), ', ') . ')');
+
+            $ids[] = $this->_pdo->lastInsertId();
+        }
+
+        return (count($ids) == 1) ? $ids[0] : $ids;
     }
 
 
@@ -801,9 +891,14 @@ class DB
     {
         $where || $where = array('id' => $data['id']);
 
-        $data && $data = $this->_set($data);
+        $data = $this->_quote($data);
 
-        return $this->exec('UPDATE ' . $table . ' SET ' . implode(', ', $data) . $this->_where($where));
+        $sets = array();
+        foreach ($data as $key => $val) {
+            $sets[] = "$key = $val";
+        }
+
+        return $this->exec('UPDATE ' . $this->_pre . $table . ' SET ' . implode(', ', $sets) . $this->_where($where));
     }
 
 
@@ -815,47 +910,91 @@ class DB
      */
     public function delete($table, $where = null)
     {
-        is_int($where) && $where = array('id' => $where);
-        return $this->exec('DELETE FROM ' . $table . $this->_where($where));
+        ctype_alnum($where) && $where = array('id' => $where);
+        return $this->exec('DELETE FROM ' . $this->_pre . $table . $this->_where($where));
     }
 
 
     /**
      * WHERE条件
      * @param $where
+     * @param string $prefix
      * @return string
      */
     private function _where($where, $prefix = ' WHERE ')
     {
-        $logic = isset($where['_logic']) ? $where['_logic'] : 'AND';
-        isset($where['_where']) && $_where = $this->_where($where['_where'], '');
-        unset($where['_logic']);unset($where['_where']);
+        if (empty($where) || is_string($where)) {
+            return empty($where) ? '' : $prefix . $where;
+        }
 
-        is_array($where) && $where = $this->_set($where);
+        $logic = isset($where['_logic']) ? strtoupper($where['_logic']) : 'AND';
+        isset($where['_where']) && $_where = $this->_where($where['_where'], '');
+        unset($where['_logic'], $where['_where']);
+
+        $items = $this->_quote($where);
+
+        $where = array();
+        foreach ($items as $key => $val) {
+
+            // column operator
+            list($col, $op) = explode(' ', $key, 2);
+            $op = isset($op) ? strtoupper($op) : '=';
+
+            // [~]BETWEEN/IN/IS/LIKE
+            $not = (strpos($op, '~') === 0) ? ' NOT ' : null;
+            $not && ($op = substr($op, 1));
+            switch($op){
+                case 'BETWEEN':
+                    $op = $not .$op;
+                    $val = "{$val[0]} AND {$val[1]}";
+                    break;
+                case 'IN':
+                    $op = $not .$op;
+                    $val = '('. (is_array($val) ? implode(',', $val) : $val) . ')';
+                    break;
+                case 'IS':
+                    $op = $op .$not;
+                    $val = ($val == "''") ? 'NULL' : $val;
+                    break;
+                case 'LIKE':
+                    $op = $not .$op;
+                    $val = "CONCAT('%', {$val}, '%')";
+                    break;
+                default:
+                    !in_array($op, self::$OP) && ($op = false);
+                    break;
+            }
+
+            $op && $where[] = "$col $op $val";
+        }
 
         isset($_where) && $where[] = $_where;
 
-        return $where ? $prefix .  '(' . implode(" {$logic} ", $where) . ')' : '';
+        return $where ? $prefix . '(' . implode(" {$logic} ", $where) . ')' : '';
     }
 
-    private function _set($data)
+
+    /**
+     * 参数转义，根据字段判断是否需要转义
+     *  #column => value 不需要转义
+     *   column => value 需要转义
+     * @param $data
+     * @return array
+     */
+    private function _quote($data)
     {
-        $fields = array();
-        foreach ($data as $col => $val) {
+        $fun_quote = array($this->_pdo, 'quote');
 
-            //is_array($val) || $val = array('=', $val);
-            //$fields[] = $col . $val[0] . $this->_quote($val[1]);
+        $items = array();
+        foreach($data as $col => $val)
+        {
+            // 如果字段以#开头则不需要转义，否则需要转义
+            (strpos($col, '#') === 0) ? ($col = substr($col, 1)) : ($val = is_array($val) ? array_map($fun_quote, $val) : $this->_pdo->quote($val));
 
-            $col = explode(' ', $col);
-            $fields[] = $col[0] . (isset($col[1]) ? $col[1] : '=') . $this->_quote($val);
+            $items[$col] = $val;
         }
 
-        return $fields;
-    }
-
-    private function _quote($value)
-    {
-        return $this->_pdo->quote($value);
+        return $items;
     }
 }
 
