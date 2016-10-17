@@ -1,5 +1,6 @@
 <?php
-@error_reporting(0);
+@error_reporting(E_ALL^E_NOTICE);
+date_default_timezone_set("PRC");
 
 // 单文件入口
 IndexPHP::run();
@@ -34,6 +35,7 @@ class IndexPHP
         defined('FILE_APP_COMM') or define('FILE_APP_COMM', PATH_APP . '/common.php');
 
         define('IS_POST', Param::server('REQUEST_METHOD') =='POST' ? true : false);
+        define('HTTP_HOST', Param::server('HTTP_HOST'));
 
         // 初始化框架
         self::_init();
@@ -46,6 +48,9 @@ class IndexPHP
         $ca = explode('/', trim(Param::server('PATH_INFO', Config::get('DEFAULT_CTRL_ACTION')), '/'));
         define('CTRL_NAME', strtolower(Param::get(Config::get('PARAM_CTRL', 'c'), !empty($ca[0]) ? $ca[0] : 'index')));
         define('ACTION_NAME', strtolower(Param::get(Config::get('PARAM_ACTION', 'a'), !empty($ca[1]) ? $ca[1] : 'index')));
+
+        // URL参数按顺序绑定变量
+        preg_replace_callback('/(\w+)\/([^\/]+)/', function($match) {$_GET[$match[1]]=strip_tags($match[2]);}, trim(Param::server('PATH_INFO'), '/'));
 
         // 导入控制器文件
         if (!self::import(PATH_APP_CTRL . CTRL_NAME . Config::get('FILE_EXTENSION_CTRL', '.class.php'))) {
@@ -92,7 +97,8 @@ class IndexPHP
      */
     public static function decamelize($word)
     {
-        return preg_replace('/(^|[a-z])([A-Z])/e', 'strtolower(strlen("\\1") ? "\\1_\\2" : "\\2")', $word);
+        //return preg_replace('/(^|[a-z])([A-Z])/e', 'strtolower(strlen("\\1") ? "\\1_\\2" : "\\2")', $word);
+        return preg_replace_callback('/(^|[a-z])([A-Z])/', function($r){return strtolower(strlen($r[1]) ? "{$r[1]}_{$r[2]}" : $r[2]);}, $word);
     }
 
 
@@ -103,7 +109,8 @@ class IndexPHP
      */
     public static function camelize($word)
     {
-        return preg_replace('/(^|_)([a-z])/e', 'strtoupper("\\2")', $word);
+        //return preg_replace('/(^|_)([a-z])/e', 'strtoupper("\\2")', $word);
+        return preg_replace_callback('/(^|_)([a-z])/', function($r){return strtoupper($r[2]);}, $word);
     }
 
     /**
@@ -118,7 +125,7 @@ class IndexPHP
             mkdir(PATH_APP_LIB, 0755);
             mkdir(PATH_APP_LOG, 0755);
             // file_put_contents(FILE_APP_CONF, "<?php\nreturn array(\n\t//'配置项'=>'配置值'\n);");
-            file_put_contents(PATH_APP_CTRL . "index.class.php", "<?php\nclass IndexController extends Controller {\n\n    public function index(){\n        \$this->show('hi index-php~');\n    }\n}");
+            file_put_contents(PATH_APP_CTRL . "index.class.php", "<?php\nclass IndexController extends Controller {\n\n    public function index(){\n        \$this->show('<h2>Hi IndexPHP~</h2>');\n    }\n}");
             file_put_contents(".htaccess", "<IfModule mod_rewrite.c>\n   RewriteEngine on\n   RewriteCond %{REQUEST_FILENAME} !-d\n   RewriteCond %{REQUEST_FILENAME} !-f\n   RewriteRule ^(.*)$ index.php/$1 [QSA,PT]\n</IfModule>");
 
             // 压缩源文件
@@ -255,7 +262,8 @@ class Controller
      */
     protected function display($tpl = null, $params = null, $layout = null) {
         is_array($tpl) && list($tpl, $params, $layout) = array(null, $tpl, $params);
-        $tpl || $tpl = CTRL_NAME . '/' . ACTION_NAME;
+
+        strpos($tpl, '/') || $tpl = CTRL_NAME . '/' . ($tpl ?: ACTION_NAME);
         $this->_theme && $tpl = $this->_theme . '/' . $tpl; // 主题
 
         $params = $params ? array_merge($this->_p, $params) : $this->_p;
@@ -547,10 +555,18 @@ class Config {
  */
 class Param
 {
-    public static function url($action = ACTION_NAME, $ctrl = CTRL_NAME, $params = null)
+    public static function url($params = null, $action = ACTION_NAME, $ctrl = CTRL_NAME)
     {
-        is_array($params) && $params = http_build_query($params);
-        return "/{$ctrl}/{$action}?{$params}";
+        //is_array($params) && $params = http_build_query($params);
+        //return "/{$ctrl}/{$action}?{$params}";
+
+        $url = "/index.php/{$ctrl}/{$action}";
+        if($params) {
+            foreach ($params as $key => $val) {
+                $url .= "/{$key}/{$val}";
+            }
+        }
+        return Config::get('SYS_MODULE','').$url;
     }
 
     /**
@@ -721,6 +737,7 @@ class Logger
 }
 
 
+
 /**
  * 数据库操作
  * Class DB
@@ -740,11 +757,11 @@ class DB
      * @var
      */
     private $_pre;
-
-    /**
-     * @var PDO
-     */
-    private $_pdo;
+//
+//    /**
+//     * @var PDO
+//     */
+//    private $_pdo;
 
 
     /**
@@ -758,7 +775,10 @@ class DB
         $key = md5($config['DB_TYPE'] . $config['DB_HOST'] . $config['DB_USER'] . $debug);
 
         static $_c = array();
-        isset($_c[$key]) || $_c[$key] = new self($config, $debug);
+        //isset($_c[$key]) || $_c[$key] = new self($config, $debug);
+        if(!isset($_c[$key])) {
+            $_c[$key] = ($config['DB_TYPE'] == 'sqlite') ? new Sqlite($config, $debug) : new Mysql($config, $debug);
+        }
 
         return $_c[$key];
     }
@@ -769,43 +789,27 @@ class DB
      * @param $config
      * @param $debug
      */
-    private function __construct($config, $debug = false)
+    protected function __construct($config, $debug = false)
     {
-        isset($config['DB_CHARSET']) || $config['DB_CHARSET'] = 'utf8';
-        $dsn = "{$config['DB_TYPE']}:host={$config['DB_HOST']};port={$config['DB_PORT']};dbname={$config['DB_NAME']};charset={$config['DB_CHARSET']}";
-
-        $this->_pdo = new PDO($dsn, $config['DB_USER'], $config['DB_PWD']);
         $this->_pre = $config['DB_PREFIX'];
         $this->_debug = $debug;
     }
 
 
     /**
-     * 查询
+     * 调试信息
      * @param $query
-     * @return mixed
      */
-    public function query($query)
-    {
+    protected function debug($query) {
         $this->_debug && Logger::debug($query);
-
-        $query = $this->_pdo->query($query);
-        return $query ? $query->fetchAll(PDO::FETCH_ASSOC) : false;
+//        Logger::debug($query);
     }
 
 
-    /**
-     * 执行
-     * @param $query
-     * @return mixed
-     */
-    public function exec($query)
-    {
-        $this->_debug && Logger::debug($query);
-
-        return $this->_pdo->exec($query);
-    }
-
+    public function query($query) {}
+    public function exec($query) {}
+    protected function lastId() {}
+    protected function escape($query) {}
 
     /**
      * @param $table
@@ -839,7 +843,7 @@ class DB
 
         !is_array($option) && $option = array('_column' => $option);
 
-        $column = $option['_column'] ?: '*';
+        $column = isset($option['_column']) ? $option['_column'] : '*';
         $group = isset($option['_group']) ? ' GROUP BY ' . $option['_group'] : '';
         $order = isset($option['_order']) ? ' ORDER BY ' . $option['_order'] : '';
         $limit = isset($option['_limit']) ? ' LIMIT ' . $option['_limit'] : '';
@@ -869,11 +873,10 @@ class DB
         $ids = array();
         foreach($data as $item)
         {
-            $item = $this->_quote($item);
-
+            $item = $this->_escape($item);
             $this->exec('INSERT INTO ' . $this->_pre . $table . ' (' . implode(', ', array_keys($item)) . ') VALUES (' . implode(array_values($item), ', ') . ')');
 
-            $ids[] = $this->_pdo->lastInsertId();
+            $ids[] = $this->lastId();
         }
 
         return (count($ids) == 1) ? $ids[0] : $ids;
@@ -891,9 +894,8 @@ class DB
     {
         $where || $where = array('id' => $data['id']);
 
-        $data = $this->_quote($data);
-
         $sets = array();
+        $data = $this->_escape($data);
         foreach ($data as $key => $val) {
             $sets[] = "$key = $val";
         }
@@ -931,13 +933,13 @@ class DB
         isset($where['_where']) && $_where = $this->_where($where['_where'], '');
         unset($where['_logic'], $where['_where']);
 
-        $items = $this->_quote($where);
+        $items = $this->_escape($where);
 
         $where = array();
         foreach ($items as $key => $val) {
 
             // column operator
-            list($col, $op) = explode(' ', $key, 2);
+            list($col, $op) = array_pad(explode(' ', $key), 2, null);
             $op = isset($op) ? strtoupper($op) : '=';
 
             // [~]BETWEEN/IN/IS/LIKE
@@ -981,20 +983,158 @@ class DB
      * @param $data
      * @return array
      */
-    private function _quote($data)
+    private function _escape($data)
     {
-        $fun_quote = array($this->_pdo, 'quote');
-
         $items = array();
+        $fun_quote = array($this, 'escape');
         foreach($data as $col => $val)
         {
             // 如果字段以#开头则不需要转义，否则需要转义
-            (strpos($col, '#') === 0) ? ($col = substr($col, 1)) : ($val = is_array($val) ? array_map($fun_quote, $val) : $this->_pdo->quote($val));
-
+            (strpos($col, '#') === 0) ? ($col = substr($col, 1)) : ($val = is_array($val) ? array_map($fun_quote, $val) : $this->escape($val));
             $items[$col] = $val;
         }
 
         return $items;
+    }
+}
+
+
+
+class Mysql extends DB {
+
+    /**
+     * @var PDO
+     */
+    private $_pdo;
+
+    /**
+     * DB constructor.
+     * @param $config
+     * @param $debug
+     */
+    protected function __construct($config, $debug = false)
+    {
+        parent::__construct($config, $debug);
+
+        isset($config['DB_CHARSET']) || $config['DB_CHARSET'] = 'utf8';
+        $dsn = "{$config['DB_TYPE']}:host={$config['DB_HOST']};port={$config['DB_PORT']};dbname={$config['DB_NAME']};charset={$config['DB_CHARSET']}";
+        $this->_pdo = new PDO($dsn, $config['DB_USER'], $config['DB_PWD']);
+    }
+
+
+    /**
+     * 查询
+     * @param $query
+     * @return mixed
+     */
+    public function query($query)
+    {
+        $this->debug($query);
+        $query = $this->_pdo->query($query);
+        return $query ? $query->fetchAll(PDO::FETCH_ASSOC) : false;
+    }
+
+
+    /**
+     * 执行
+     * @param $query
+     * @return mixed
+     */
+    public function exec($query)
+    {
+        $this->debug($query);
+        return $this->_pdo->exec($query);
+    }
+
+
+    /**
+     * 自增ID
+     * @return int
+     */
+    protected function lastId() {
+        return $this->_pdo->lastInsertId();
+    }
+
+
+    /**
+     * 转义处理
+     * @param $query
+     * @return string
+     */
+    protected function escape($query) {
+        return $this->_pdo->quote($query);
+    }
+}
+
+class Sqlite extends DB {
+
+    /**
+     * @var SQLite3
+     */
+    private $_sqlite;
+
+    /**
+     * DB constructor.
+     * @param $config
+     * @param $debug
+     */
+    protected function __construct($config, $debug = false)
+    {
+        parent::__construct($config, $debug);
+
+        $this->_sqlite = new SQLite3($config['DB_NAME']);
+    }
+
+
+    /**
+     * 查询
+     * @param $query
+     * @return mixed
+     */
+    public function query($query)
+    {
+        $this->debug($query);
+        $query = $this->_sqlite->query($query);
+        if($query) {
+            $data = array();
+            while ($row = $query->fetchArray(SQLITE3_ASSOC)) {
+                $data[] = $row;
+            }
+            return $data;
+        }
+        return false;
+    }
+
+
+    /**
+     * 执行
+     * @param $query
+     * @return mixed
+     */
+    public function exec($query)
+    {
+        $this->debug($query);
+        $this->_sqlite->exec($query);
+        return $this->_sqlite->changes();
+    }
+
+
+    /**
+     * 自增ID
+     * @return int
+     */
+    protected function lastId() {
+        return $this->_sqlite->lastInsertRowID();
+    }
+
+
+    /**
+     * 转义处理
+     * @param $query
+     * @return string
+     */
+    protected function escape($query) {
+        return '\''.$this->_sqlite->escapeString($query).'\'';
     }
 }
 
